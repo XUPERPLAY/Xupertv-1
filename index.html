@@ -548,6 +548,7 @@
       padding: 6px 10px;
       font-size: 0.8rem;
     }
+}
 </style>
 </head>
 <body>
@@ -572,7 +573,7 @@
     <div class="search-container">
       <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor"/>
-      </svg>
+        </svg>
       <input type="text" class="search-input" placeholder="Buscar canales..." id="search-input">
     </div>
     <div class="categories" id="categories-container">
@@ -587,7 +588,7 @@
     </div>
   </div>
 
-  <div class="player-container" id="player-container" style="display: none;">
+  <div class="player-container" id="player-container">
     <div class="player-header">
       <div class="player-title" id="player-title">Viéndo</div>
       <button class="player-close" onclick="app.player.hide()">
@@ -701,10 +702,10 @@
           }
           
           if (data.length === 0) {
-            throw new Error("Ningún canal encontrado en la API");
+            this.showError("Ningún canal encontrado en la API. Esto puede deberse a que las credenciales no son correctas o la lista está vacía.");
+            return;
           }
           
-          // Ahora no filtramos por deportes, usamos todos los canales
           this.state.channels = data;
           
           console.log("Total de canales encontrados:", this.state.channels.length);
@@ -714,14 +715,14 @@
         })
         .catch(error => {
           console.error("Error al cargar canales:", error);
-          this.showError(error.message);
+          this.showError(`Error al cargar canales: ${error.message}`);
         });
     },
     
     organizeChannelsByCategory: function() {
       const categories = new Set();
       this.state.channels.forEach(channel => {
-        if (channel.category_name) {
+        if (channel.category_name && channel.category_name.trim() !== "" && channel.category_name.toLowerCase() !== "sin categoría") {
           categories.add(channel.category_name);
         }
       });
@@ -733,7 +734,7 @@
       
       if (this.state.searchTerm) {
         channelsToShow = this.state.channels.filter(channel => 
-          channel.name.toLowerCase().includes(this.state.searchTerm)
+          channel.name && channel.name.toLowerCase().includes(this.state.searchTerm)
         );
       } else if (this.state.currentCategory === "all") {
         channelsToShow = this.state.channels;
@@ -754,14 +755,16 @@
         </button>
       `;
       
-      this.state.categories.forEach(category => {
-        categoriesHTML += `
-          <button class="category-btn ${this.state.currentCategory === category ? "active" : ""}" 
-                  onclick="app.setCategory('${category}')">
-            ${category}
-          </button>
-        `;
-      });
+      if (this.state.categories && this.state.categories.length > 0) {
+        this.state.categories.forEach(category => {
+          categoriesHTML += `
+            <button class="category-btn ${this.state.currentCategory === category ? "active" : ""}" 
+                    onclick="app.setCategory('${category}')">
+              ${category}
+            </button>
+          `;
+        });
+      }
 
       categoriesHTML += `
         <button class="category-btn ${this.state.currentCategory === "favorites" ? "active" : ""}" 
@@ -782,10 +785,11 @@
         channelsToShow.forEach(channel => {
           const isFavorite = this.state.favorites.some(fav => fav.stream_id === channel.stream_id);
           
-          // Detectar si el canal es de deportes para aplicar el estilo
           const sportsKeywords = ['deporte', 'sport', 'fútbol', 'basketball', 'nba', 'ufc', 'formula'];
-          const isSportChannel = sportsKeywords.some(keyword => 
-            channel.category_name.toLowerCase().includes(keyword) || channel.name.toLowerCase().includes(keyword)
+          const isSportChannel = channel.name && channel.category_name && (
+            sportsKeywords.some(keyword => 
+              channel.category_name.toLowerCase().includes(keyword) || channel.name.toLowerCase().includes(keyword)
+            )
           );
           
           channelsHTML += `
@@ -797,8 +801,8 @@
                 </button>
               </div>
               <img class="channel-logo" src="${channel.stream_icon || 'https://via.placeholder.com/80x80?text=TV'}" alt="${channel.name}">
-              <div class="channel-name">${channel.name}</div>
-              <div class="channel-category">${channel.category_name || ''}</div>
+              <div class="channel-name">${channel.name || 'Sin nombre'}</div>
+              <div class="channel-category">${channel.category_name || 'Sin categoría'}</div>
             </div>
           `;
         });
@@ -855,15 +859,15 @@
     
     showQualityModal: function(channel) {
       const qualities = [
-        { name: 'HD', url: `${this.config.liveBase}${channel.stream_id}.m3u8`, resolution: '1280x720' },
-        { name: 'SD', url: `${this.config.liveBase}${channel.stream_id}_sd.m3u8`, resolution: '854x480' },
-        { name: 'FHD', url: `${this.config.liveBase}${channel.stream_id}_fhd.m3u8`, resolution: '1920x1080' }
+        { name: 'HD', url: `${app.config.liveBase}${channel.stream_id}.m3u8`, resolution: '1280x720' },
+        { name: 'SD', url: `${app.config.liveBase}${channel.stream_id}_sd.m3u8`, resolution: '854x480' },
+        { name: 'FHD', url: `${app.config.liveBase}${channel.stream_id}_fhd.m3u8`, resolution: '1920x1080' }
       ];
       
       let optionsHTML = '';
       qualities.forEach(q => {
         optionsHTML += `
-          <div class="quality-option" onclick="window.open('${q.url}', '_blank');">
+          <div class="quality-option" onclick="app.player.playChannel('${q.url}', ${JSON.stringify(channel).replace(/"/g, '&quot;')}, ${JSON.stringify(q).replace(/"/g, '&quot;')})">
             <div>
               <div class="quality-name">${q.name}</div>
               <div class="quality-resolution">${q.resolution}</div>
@@ -888,16 +892,60 @@
       currentQuality: null,
       hls: null,
       
+      playChannel: function(url, channel, quality) {
+        this.currentItem = channel;
+        this.currentQuality = quality;
+        
+        document.getElementById('quality-modal').style.display = 'none';
+        document.getElementById('player-container').style.display = 'flex';
+        document.getElementById('channel-info').style.display = 'flex';
+        document.getElementById('player-title').textContent = channel.name;
+        document.getElementById('channel-name').textContent = channel.name;
+        document.getElementById('channel-logo').src = channel.stream_icon || 'https://via.placeholder.com/80x80?text=TV';
+        document.getElementById('channel-quality').textContent = quality.name;
+        document.getElementById('channel-category').textContent = channel.category_name;
+
+        const video = document.getElementById('player');
+        
+        if (Hls.isSupported()) {
+          this.hls = new Hls();
+          this.hls.loadSource(url);
+          this.hls.attachMedia(video);
+          this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            video.play();
+          });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = url;
+          video.addEventListener('loadedmetadata', () => {
+            video.play();
+          });
+        } else {
+          alert('Tu navegador no es compatible con el reproductor de video.');
+        }
+      },
+      
       play: function() {
-        console.log('Reproducir en una aplicación externa.');
+        const video = document.getElementById('player');
+        if (video.paused) {
+          video.play();
+        }
       },
       
       pause: function() {
-        console.log('Pausar en una aplicación externa.');
+        const video = document.getElementById('player');
+        if (!video.paused) {
+          video.pause();
+        }
       },
       
       stop: function() {
-        console.log('Detener en una aplicación externa.');
+        const video = document.getElementById('player');
+        video.pause();
+        video.currentTime = 0;
+        if (this.hls) {
+          this.hls.destroy();
+          this.hls = null;
+        }
       },
       
       changeQuality: function() {
@@ -906,13 +954,9 @@
         }
       },
       
-      playChannel: function(url, channel, quality) {
-        console.log('Reproduciendo canal en una aplicación externa:', url);
-        window.open(url, '_blank');
-      },
-      
       hide: function() {
-        console.log('El reproductor interno no está en uso.');
+        this.stop();
+        document.getElementById('player-container').style.display = 'none';
       }
     }
   };
